@@ -48,12 +48,14 @@ tHandler	gCoke_Handler = {
 	Coke_CanDispense,
 	Coke_DoDispense
 };
+// - Config
 const char	*gsCoke_ModbusAddress = "130.95.13.73";
  int		giCoke_ModbusPort = 502;
+bool	gbCoke_DummyMode = false;
+// - State
 modbus_t	*gCoke_Modbus;
 time_t	gtCoke_LastDispenseTime;
 time_t	gtCoke_LastReconnectTime;
- int	gbCoke_DummyMode = 1;
  int	giCoke_NextCokeSlot = 0;
 
 // == CODE ===
@@ -61,11 +63,7 @@ int Coke_InitHandler()
 {
 	// Configuable dummy/blank mode (all dispenses succeed)
 	// TODO: Find a better way of handling missing/invalid options
-	if( Config_GetValueCount("coke_dummy_mode") > 0 )
-	{
-		gbCoke_DummyMode = Config_GetValue_Bool("coke_dummy_mode", 0);
-		if(gbCoke_DummyMode == -1)	gbCoke_DummyMode = 0;
-	}
+	Config_GetValue_Bool("coke_dummy_mode", &gbCoke_DummyMode);
 
 	// Open modbus
 	if( !gbCoke_DummyMode )
@@ -122,8 +120,12 @@ int Coke_DoDispense(int UNUSED(User), int Item)
 int Coke_int_ConnectToPLC(void)
 {
 	// Ratelimit
-	if( time(NULL) - gtCoke_LastReconnectTime < COKE_RECONNECT_RATELIMIT )
+	time_t elapsed = time(NULL) - gtCoke_LastReconnectTime;
+	if( elapsed < COKE_RECONNECT_RATELIMIT ) {
+		Debug_Notice("Not reconnecting, only %llis have pased, %i limit", (long long)elapsed, COKE_RECONNECT_RATELIMIT);
+		errno = EAGAIN;
 		return -1;
+	}
 
 	if( !gCoke_Modbus )
 	{
@@ -139,7 +141,7 @@ int Coke_int_ConnectToPLC(void)
 		// Preven resource leaks
 		modbus_close(gCoke_Modbus);
 	}
-	Debug_Notice("Connecting to coke PLC machine on '%s'\n", gsCoke_ModbusAddress);
+	Debug_Notice("Connecting to coke PLC machine on '%s':%i", gsCoke_ModbusAddress, giCoke_ModbusPort);
 	
 	if( modbus_connect(gCoke_Modbus) )
 	{
